@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>burnrate — watch your Claude Code quota burn, live</title>
+<meta name="description" content="A Claude Code mod: one row above the prompt showing how fast your plan windows are filling, when they run out, and when your prompt cache was thrown away.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="burnrate — watch your Claude Code quota burn, live">
+<meta property="og:description" content="How fast your plan windows are filling, when they run out, and when your prompt cache was thrown away. One row above the Claude Code prompt.">
+<meta property="og:url" content="https://nemke82.github.io/claude-code-burnrate/">
+<meta property="og:image" content="https://nemke82.github.io/claude-code-burnrate/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://nemke82.github.io/claude-code-burnrate/og.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%2370c878'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #16181d;
+    --panel: #1d2026;
+    --line: #2c313a;
+    --text: #d6dae0;
+    --dim: #8b929e;
+    --cyan: #5cc8d6;
+    --green: #70c878;
+    --yellow: #e5c064;
+    --red: #f06262;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.6 var(--sans);
+  }
+  main { max-width: 892px; margin: 0 auto; padding: 0 16px 72px; }
+  header { padding: 72px 0 28px; }
+  .mark { color: var(--green); }
+  h1 {
+    margin: 0 0 14px;
+    font: 700 clamp(38px, 8vw, 60px)/1.05 var(--mono);
+    letter-spacing: -0.02em;
+    color: var(--cyan);
+  }
+  .lede { margin: 0 0 28px; max-width: 34em; font-size: clamp(18px, 2.6vw, 21px); color: var(--text); }
+  .lede b { color: #fff; font-weight: 600; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn {
+    display: inline-block;
+    padding: 10px 18px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    font: 600 15px var(--sans);
+    text-decoration: none;
+  }
+  .btn.primary { background: var(--cyan); border-color: var(--cyan); color: #0e1114; }
+  .btn:hover { border-color: var(--cyan); }
+  .btn:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+  figure { margin: 28px 0; }
+  .shot {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+  figcaption { margin-top: 8px; font-size: 14px; color: var(--dim); }
+  h2 {
+    margin: 64px 0 14px;
+    font: 700 24px/1.25 var(--sans);
+    color: #fff;
+  }
+  p { margin: 0 0 16px; max-width: 40em; }
+  a { color: var(--cyan); }
+  code { font: 0.92em var(--mono); color: var(--text); }
+  .term {
+    margin: 18px 0;
+    padding: 16px 18px;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    font: 14.5px/1.7 var(--mono);
+    white-space: pre;
+  }
+  .term .p { color: var(--dim); user-select: none; }
+  .cmd { display: flex; align-items: center; gap: 12px; white-space: normal; }
+  .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 1em; }
+  .copy {
+    flex: none;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--dim);
+    font: 600 12px var(--sans);
+    cursor: pointer;
+  }
+  .copy:hover { color: var(--text); border-color: var(--cyan); }
+  .c { color: var(--cyan); font-weight: 700; }
+  .g { color: var(--green); }
+  .y { color: var(--yellow); font-weight: 700; }
+  .r { color: var(--red); }
+  .d { color: var(--dim); }
+  dl.read { margin: 22px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 12px 22px; }
+  dl.read dt { font: 14.5px/1.7 var(--mono); white-space: nowrap; }
+  dl.read dd { margin: 0; color: var(--text); }
+  ul.plain { margin: 0; padding: 0; list-style: none; }
+  ul.plain li { margin: 0 0 12px; padding-left: 22px; position: relative; max-width: 40em; }
+  ul.plain li::before { content: "–"; position: absolute; left: 0; color: var(--dim); }
+  ul.plain b { color: #fff; font-weight: 600; }
+  .note { font-size: 15px; color: var(--dim); }
+  footer {
+    margin-top: 72px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    font-size: 14px;
+    color: var(--dim);
+  }
+  @media (max-width: 600px) {
+    header { padding-top: 44px; }
+    dl.read { grid-template-columns: 1fr; gap: 2px 0; }
+    dl.read dd { margin-bottom: 12px; }
+    .term { font-size: 12.5px; padding: 14px; }
+    /* a terminal recording shrunk to a phone's width is unreadable: keep it legible and let it scroll */
+    .shot img { width: 640px; max-width: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><span class="mark">●</span> burnrate</h1>
+    <p class="lede">Watch your Claude Code quota burn, live. One row above the prompt shows <b>how fast your plan windows are filling</b>, <b>when they run out</b>, and <b>when your prompt cache was thrown away</b>.</p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/nemke82/claude-code-burnrate">View on GitHub</a>
+      <a class="btn" href="#install">Install</a>
+    </div>
+  </header>
+
+  <figure>
+    <div class="shot"><img src="https://raw.githubusercontent.com/nemke82/claude-code-burnrate/main/assets/demo-band.gif" width="858" height="175" alt="Animation of burnrate's row above the Claude Code prompt: plan windows, the cache share, a pace, a warning that the five-hour window fills in 1h 20m, and a cache miss after a model change."></div>
+    <figcaption>The row through a scripted session. Every line is drawn by the mod's own code.</figcaption>
+  </figure>
+
+  <h2>Reading the row</h2>
+  <div class="term" role="img" aria-label="Example row: burnrate, five-hour window 62 percent, plus 30 percent per hour, full in 1 hour 16 minutes, seven-day window 41 percent, 98 percent cached"><span class="g">●</span> <span class="c">burnrate</span> <span class="d">5h 62% +30%/h</span> <span class="y">full in 1h 16m</span> <span class="d">7d 41%</span> <span class="g">98% cached</span></div>
+  <dl class="read">
+    <dt><span class="d">5h 62%</span></dt>
+    <dd>The plan window that matters most right now. Yellow at 70%, red at 90%.</dd>
+    <dt><span class="d">+30%/h</span></dt>
+    <dd>The pace: how fast that window has been filling over the last half hour.</dd>
+    <dt><span class="y">full in 1h 16m</span></dt>
+    <dd>Shown only when, at that pace, the window fills before it resets.</dd>
+    <dt><span class="g">98% cached</span></dt>
+    <dd>How much of the last request the prompt cache served.</dd>
+    <dt><span class="r">miss: model changed</span></dt>
+    <dd>A request wrote again what the previous one had cached, with an estimate of the tokens rewritten.</dd>
+  </dl>
+
+  <h2><code>/burn</code> for the detail</h2>
+  <p>A pane with the session's totals, every cache miss and what is known about it, both plan windows with reset times and pace, and the last requests one by one.</p>
+  <figure>
+    <div class="shot"><img src="https://raw.githubusercontent.com/nemke82/claude-code-burnrate/main/assets/demo-pane.gif" width="858" height="532" loading="lazy" alt="Animation of the /burn pane opening: session totals, a list of cache misses, plan window bars with pace, and a table of recent requests."></div>
+    <figcaption>Typing <code>/burn</code>. <code>/burn close</code> shuts it.</figcaption>
+  </figure>
+
+  <h2 id="install">Install</h2>
+  <p>In Claude Code:</p>
+  <div class="term cmd"><code>/plugin marketplace add nemke82/claude-code-burnrate</code><button class="copy" type="button" data-copy="/plugin marketplace add nemke82/claude-code-burnrate">Copy</button></div>
+  <div class="term cmd"><code>/plugin install burnrate@burnrate</code><button class="copy" type="button" data-copy="/plugin install burnrate@burnrate">Copy</button></div>
+  <p class="note">Mods are early access. Start Claude Code with <code>CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1</code>, version 2.1.259 or later. The mod API may change between releases.</p>
+
+  <h2>What it does not claim</h2>
+  <ul class="plain">
+    <li><b>No dollars.</b> The only cost figure available is list price, which is not what a subscription or a custom contract pays. burnrate shows quota and tokens.</li>
+    <li><b>Miss sizes are estimates,</b> marked with <code>~</code>. The API reports how many tokens were read and written, not which ones.</li>
+    <li><b>A pause is not called an expiry.</b> The mod cannot see which cache lifetime a request asked for, so it reports the pause and leaves the conclusion to you.</li>
+    <li><b>The pace is a projection, not a forecast.</b> One heavy turn moves it, and the windows belong to your account, so other sessions move them too.</li>
+    <li><b>One point is not a trend.</b> A window that moved a single point never raises a warning.</li>
+  </ul>
+
+  <h2>How it is built</h2>
+  <p>Four hooks feed three pure modules: one detects cache misses, one works out the pace, one lays out the row and the pane as plain data. 44 tests cover them, including the row and pane mounted on every surface Claude Code draws to.</p>
+  <p><a href="https://github.com/nemke82/claude-code-burnrate">Source, tests and the demo scripts are on GitHub.</a></p>
+
+  <footer>
+    burnrate is MIT licensed and not affiliated with Anthropic. Young software: the thresholds have not been tuned against many real sessions yet.
+  </footer>
+</main>
+<script>
+  for (const button of document.querySelectorAll('.copy')) {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy)
+        button.textContent = 'Copied'
+      } catch {
+        button.textContent = 'Select and copy'
+      }
+      setTimeout(() => { button.textContent = 'Copy' }, 1600)
+    })
+  }
+</script>
+</body>
+</html>
