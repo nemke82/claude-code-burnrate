@@ -8,5 +8,12 @@
   },
   "repository": "https://github.com/nemke82/claude-code-burnrate",
   "license": "MIT",
-  "keywords": ["mod", "function-hooks", "observability", "prompt-caching", "cost"]
+  "keywords": [
+    "mod",
+    "function-hooks",
+    "observability",
+    "prompt-caching",
+    "cost"
+  ],
+  "types": "./types/index.d.ts"
 }

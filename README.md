@@ -2,7 +2,7 @@
 
 Live cost meter for Claude Code: see what each prompt-cache miss cost you and how fast you're burning your plan window.
 
-> **Status: skeleton.** The mod loads and draws one row above the prompt. The meter itself is not built yet.
+> **Status: data layer.** The mod records every main-loop request's cache usage, detects cache misses and their cause, and tracks your plan windows. For now it shows them as one plain line above the prompt; the real layout and `/burn` are not built yet.
 
 ## Planned
 
