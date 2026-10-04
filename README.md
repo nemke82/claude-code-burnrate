@@ -1,17 +1,17 @@
 # burnrate
 
-Live cost meter for Claude Code: your session's cost, your prompt-cache misses with an estimate of the tokens each rewrote, and how fast you're burning your plan window.
+Live quota and prompt-cache monitor for Claude Code: your plan windows, your prompt-cache misses and an estimate of the tokens each one rewrote.
 
 > **Status: early.** The meter works and is tested, but it has not been tuned against many real sessions yet.
 
 ```
-● burnrate $1.50 98% cached 7d 41% 5h 23%
-✖ burnrate $1.92 0% cached miss: model changed, ~81k rewritten 7d 41% 5h 24%
+● burnrate 7d 41% 5h 23% 98% cached
+✖ burnrate 7d 41% 5h 24% 0% cached miss: model changed, ~81k rewritten
 ```
 
 ## What it shows
 
-- **The row above the prompt:** the session's cost first, then how much of the last request the cache served, a miss when there was one, and your plan windows, tightest first. A window turns yellow at 70% and red at 90%. On a narrow terminal the detail goes and the cost stays.
+- **The row above the prompt:** your plan windows, tightest first, then how much of the last request the cache served, and a miss when there was one. A window turns yellow at 70% and red at 90%. On a narrow terminal the detail goes and the tightest window stays.
 - **`/burn`:** a pane with the session's totals, each miss with what is known about it, the plan windows with their reset times, and the last requests one by one. `/burn close` shuts it.
 
 ## What a miss is, and what it is not
@@ -27,7 +27,7 @@ A miss is a request that left a fifth or more of the cached prompt unread and wr
 The limits:
 
 - **Token counts are estimates**, shown with `~`. The API reports how many tokens were read and written, not which ones, so new content can hide inside a rewrite.
-- **No dollar figure per miss.** The session cost is the engine's own total; the mod API gives no per-model pricing to split it by.
+- **No dollars.** The only figure the mod API offers is list price, which is not what a subscription or a custom contract pays. burnrate shows quota and tokens, which are true for everyone.
 - **A pause is not an expiry.** The mod API does not say whether a request asked for the 5-minute or the 1-hour cache, so burnrate reports the pause and leaves the conclusion to you.
 - **A prompt that shrank is left out.** After `/compact` or a rewind the rewrite is expected, and it cannot be told from a lost cache.
 - **Only the main conversation is counted.** Subagents have caches of their own.

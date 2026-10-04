@@ -1,12 +1,14 @@
 /**
  * burnrate — Claude Code mod (EARLY ACCESS)
  *
- * A cost meter: every main-loop request's cache usage (`turn.step`), the
- * misses among them and what each rewrote, and the account's rate-limit
- * windows and session cost (`session.measure`), kept in `$.state`.
+ * A quota and prompt-cache monitor: the account's rate-limit windows
+ * (`session.measure`), every main-loop request's cache usage (`turn.step`)
+ * and the misses among them, kept in `$.state`. No dollars: the engine's
+ * figure is list price, which is not what a subscription or a custom
+ * contract pays.
  *
- *   - a row above the prompt: the session's cost, the last request, the misses
- *     (estimates, see detectMiss) and the plan windows
+ *   - a row above the prompt: the tightest plan window, the last request and
+ *     the misses (estimates, see detectMiss)
  *   - `/burn`: a pane with the session's totals, each miss and the last requests
  */
 import { atom, read, update } from 'claude-code'
@@ -21,7 +23,6 @@ const COMMAND = 'burn'
 
 const meter = atom({ plugin: 'burnrate', key: 'meter' } as const, EMPTY_METER as Meter)
 const windows = atom({ plugin: 'burnrate', key: 'windows' } as const, [] as PlanWindow[])
-const costUsd = atom({ plugin: 'burnrate', key: 'costUsd' } as const, null as number | null)
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -73,8 +74,6 @@ export const register: Register = on => {
   on('session.measure', async ($, e, next) => {
     const now = e.rateLimits.map(w => ({ ...w }))
     await update($, windows, () => now)
-    const usd = e.cost?.usd ?? null
-    await update($, costUsd, () => usd)
     return next(e)
   })
 
@@ -86,7 +85,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const segs = bandSegs(await read($, meter), await read($, windows), await read($, costUsd), e.props.bodyColumns)
+    const segs = bandSegs(await read($, meter), await read($, windows), e.props.bodyColumns)
     const { Box, Text } = $.ui.resolve(e)
 
     return (
@@ -102,7 +101,7 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     // HTML collapses runs of spaces; a no-break space keeps the columns
     const sp = (t: string) => (e.surface === 'terminal' ? t : t.replace(/ /g, ' '))
-    const rows = paneRows(await read($, meter), await read($, windows), await read($, costUsd), await $.clock.now(), e.props.scroll.bodyRows)
+    const rows = paneRows(await read($, meter), await read($, windows), await $.clock.now(), e.props.scroll.bodyRows)
 
     return (
       <Box flexDirection="column">

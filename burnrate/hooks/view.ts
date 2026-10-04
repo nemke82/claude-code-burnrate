@@ -36,8 +36,6 @@ export function fmtGap(ms: number): string {
   return h % 24 === 0 ? `${Math.floor(h / 24)}d` : `${Math.floor(h / 24)}d ${h % 24}h`
 }
 
-export const fmtUsd = (usd: number) => `$${usd.toFixed(2)}`
-
 /** What is known about a miss, not why the cache lost it: a pause is stated, never called an expiry. */
 export function missText(miss: Miss): string {
   if (miss.cause === 'model') return 'model changed'
@@ -72,27 +70,26 @@ export function fit(ranked: readonly (readonly [Seg, number])[], columns: number
 }
 
 /**
- * The band: one row, money first. In the order a narrow terminal drops them:
- * the session's miss count, the looser plan windows, the last miss's detail
- * (its red mark stays), then the tightest window; the cost and the cached
- * share stay.
+ * The band: one row, the tightest plan window first. In the order a narrow
+ * terminal drops them: the session's miss count, the looser plan windows, the
+ * last miss's detail (its red mark stays), then the cached share.
  */
-export function bandSegs(meter: Meter, windows: readonly PlanWindow[], costUsd: number | null, columns: number): Seg[] {
+export function bandSegs(meter: Meter, windows: readonly PlanWindow[], columns: number): Seg[] {
   const name: Seg = { text: 'burnrate', color: 'cyan', bold: true }
   const last = meter.samples[meter.samples.length - 1]
-  const byUse = [...windows].sort((a, b) => b.percentUsed - a.percentUsed)
-  const plan = byUse.map((w, i): [Seg, number] => [windowSeg(w), i === 0 ? 2 : 4])
-  const cost: [Seg, number][] = costUsd === null ? [] : [[{ text: fmtUsd(costUsd), bold: true }, 0]]
-  if (!last) return fit([[name, 0], ...cost, [{ text: 'waiting for the first request', dim: true }, 1], ...plan], columns)
+  const [tightest, ...looser] = [...windows].sort((a, b) => b.percentUsed - a.percentUsed)
+  const lead: [Seg, number][] = tightest ? [[windowSeg(tightest), 1]] : []
+  const rest = looser.map((w): [Seg, number] => [windowSeg(w), 4])
+  if (!last) return fit([[name, 0], ...lead, ...rest, [{ text: 'waiting for the first request', dim: true }, 2]], columns)
 
   const state = health(last)
-  const ranked: [Seg, number][] = [[{ text: MARK[state], color: COLOR[state], bold: true }, 0], [name, 0], ...cost]
-  ranked.push([{ text: `${Math.round(hitRatio(last) * 100)}% cached`, color: COLOR[state] }, 1])
+  const ranked: [Seg, number][] = [[{ text: MARK[state], color: COLOR[state], bold: true }, 0], [name, 0], ...lead, ...rest]
+  ranked.push([{ text: `${Math.round(hitRatio(last) * 100)}% cached`, color: COLOR[state] }, 2])
 
   const { misses, wasted } = meter.totals
   if (last.miss) ranked.push([{ text: `miss: ${missText(last.miss)}, ${fmtWaste(last.miss.wasted)} rewritten`, color: 'red' }, 3])
   if (misses > (last.miss ? 1 : 0)) ranked.push([{ text: `${plural(misses, 'miss')} ${fmtWaste(wasted)}`, dim: true }, 5])
-  return fit([...ranked, ...plan], columns)
+  return fit(ranked, columns)
 }
 
 const pad = (text: string, width: number) => text.padStart(width)
@@ -104,7 +101,7 @@ export function resetText(w: PlanWindow, now: number): string {
 }
 
 /** The /burn pane, row by row; an empty row is a blank line. The request table takes what `maxRows` leaves, three rows at least. */
-export function paneRows(meter: Meter, windows: readonly PlanWindow[], costUsd: number | null, now: number, maxRows: number): Seg[][] {
+export function paneRows(meter: Meter, windows: readonly PlanWindow[], now: number, maxRows: number): Seg[][] {
   const t = meter.totals
   const prompt = t.read + t.write + t.fresh
   const rows: Seg[][] = []
@@ -112,7 +109,6 @@ export function paneRows(meter: Meter, windows: readonly PlanWindow[], costUsd: 
   const summary = [`${t.requests} ${t.requests === 1 ? 'request' : 'requests'}`]
   if (prompt > 0) summary.push(`${Math.round((t.read / prompt) * 100)}% cached`)
   summary.push(`${fmtTokens(t.output)} output`)
-  if (costUsd !== null) summary.push(fmtUsd(costUsd))
   rows.push([{ text: 'Session', bold: true, color: 'cyan' }, { text: summary.join(' · ') }])
   rows.push([])
 

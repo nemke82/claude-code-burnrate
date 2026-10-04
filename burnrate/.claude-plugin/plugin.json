@@ -1,7 +1,7 @@
 {
   "name": "burnrate",
   "version": "0.1.0",
-  "description": "Live cost meter for Claude Code: your session's cost, your prompt-cache misses with an estimate of the tokens each rewrote, and how fast you're burning your plan window. Needs function hooks (early access).",
+  "description": "Live quota and prompt-cache monitor for Claude Code: your plan windows, your prompt-cache misses and an estimate of the tokens each one rewrote. Needs function hooks (early access).",
   "author": {
     "name": "nemke82",
     "url": "https://github.com/nemke82"
@@ -13,7 +13,7 @@
     "function-hooks",
     "observability",
     "prompt-caching",
-    "cost"
+    "rate-limits"
   ],
   "types": "./types/index.d.ts"
 }

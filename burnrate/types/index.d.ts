@@ -62,6 +62,6 @@ export type PlanWindow = {
 
 declare module 'claude-code' {
   interface PluginState {
-    burnrate: { meter: Meter; windows: PlanWindow[]; costUsd: number | null }
+    burnrate: { meter: Meter; windows: PlanWindow[] }
   }
 }

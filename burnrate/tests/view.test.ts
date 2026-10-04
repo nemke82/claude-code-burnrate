@@ -40,37 +40,38 @@ test('health: cold, warm, partial, uncached, miss', () => {
 })
 
 test('the band before any request', () => {
-  expect(texts(bandSegs(EMPTY_METER, [], null, 120))).toEqual(['burnrate', 'waiting for the first request'])
+  expect(texts(bandSegs(EMPTY_METER, [], 120))).toEqual(['burnrate', 'waiting for the first request'])
+  expect(texts(bandSegs(EMPTY_METER, PLAN, 120))).toEqual(['burnrate', '7d 95%', '5h 23%', 'waiting for the first request'])
 })
 
-test('a warm band: money first, then the cached share and the tightest window', () => {
-  const segs = bandSegs(feed({}, { startedAt: 1_000 }), PLAN, 1.5, 120)
-  expect(texts(segs)).toEqual(['●', 'burnrate', '$1.50', '98% cached', '7d 95%', '5h 23%'])
+test('a warm band: the tightest window first, then the looser, then the cached share', () => {
+  const segs = bandSegs(feed({}, { startedAt: 1_000 }), PLAN, 120)
+  expect(texts(segs)).toEqual(['●', 'burnrate', '7d 95%', '5h 23%', '98% cached'])
   expect(segs[0]?.color).toBe('green')
   expect(segs.find(s => s.text === '7d 95%')?.color).toBe('red')
 })
 
 test('the band names a miss while it is the last request, then keeps a short count', () => {
   const missed = feed({}, { startedAt: 1_000, read: 0, write: 82_000, model: 'claude-sonnet' })
-  expect(texts(bandSegs(missed, [], null, 120))).toEqual(['✖', 'burnrate', '0% cached', 'miss: model changed, ~81k rewritten'])
+  expect(texts(bandSegs(missed, [], 120))).toEqual(['✖', 'burnrate', '0% cached', 'miss: model changed, ~81k rewritten'])
 
   const after = record(missed, raw({ startedAt: 2_000, read: 82_000, write: 500, model: 'claude-sonnet' }))
-  expect(texts(bandSegs(after, [], null, 120))).toEqual(['●', 'burnrate', '99% cached', '1 miss ~81k'])
+  expect(texts(bandSegs(after, [], 120))).toEqual(['●', 'burnrate', '99% cached', '1 miss ~81k'])
 
   const again = record(after, raw({ startedAt: 2_000 + 900_000, read: 0, write: 83_000, model: 'claude-sonnet' }))
-  expect(texts(bandSegs(again, [], null, 120))).toEqual(['✖', 'burnrate', '0% cached', 'miss: after 15m idle, ~82.5k rewritten', '2 misses ~164k'])
+  expect(texts(bandSegs(again, [], 120))).toEqual(['✖', 'burnrate', '0% cached', 'miss: after 15m idle, ~82.5k rewritten', '2 misses ~164k'])
 })
 
-test('a narrow band keeps the cost and the cached share, and fits', () => {
+test('a narrow band keeps the tightest window, and fits', () => {
   const missed = feed({}, { startedAt: 1_000 }, { startedAt: 2_000, read: 0, write: 82_000 }, { startedAt: 3_000, read: 0, write: 83_000, model: 'claude-sonnet' })
-  for (const columns of [120, 80, 60, 40, 30]) {
-    const segs = bandSegs(missed, PLAN, 12.34, columns)
+  for (const columns of [120, 80, 60, 40, 20]) {
+    const segs = bandSegs(missed, PLAN, columns)
     expect(width(segs) <= columns).toBe(true)
-    expect(texts(segs)).toContain('$12.34')
-    expect(texts(segs)).toContain('0% cached')
+    expect(texts(segs)).toContain('7d 95%')
   }
-  expect(texts(bandSegs(missed, PLAN, 12.34, 60))).toEqual(['✖', 'burnrate', '$12.34', '0% cached', '7d 95%'])
-  expect(texts(bandSegs(missed, PLAN, 12.34, 30))).toEqual(['✖', 'burnrate', '$12.34', '0% cached'])
+  expect(texts(bandSegs(missed, PLAN, 120))).toEqual(['✖', 'burnrate', '7d 95%', '5h 23%', '0% cached', 'miss: model changed, ~82k rewritten', '2 misses ~163k'])
+  expect(texts(bandSegs(missed, PLAN, 60))).toEqual(['✖', 'burnrate', '7d 95%', '0% cached'])
+  expect(texts(bandSegs(missed, PLAN, 20))).toEqual(['✖', 'burnrate', '7d 95%'])
 })
 
 test('fit drops the highest rank first, the later of equals before the earlier, and never rank 0', () => {
@@ -91,7 +92,7 @@ test('fmtGap and resetText', () => {
 })
 
 test('the pane before any request', () => {
-  const lines = paneRows(EMPTY_METER, [], null, 0, 24).map(r => texts(r).join(' '))
+  const lines = paneRows(EMPTY_METER, [], 0, 24).map(r => texts(r).join(' '))
   expect(lines).toEqual([
     'Session 0 requests · 0 output',
     '',
@@ -105,8 +106,8 @@ test('the pane before any request', () => {
 
 test('the pane lists each miss with what is known of it, marked as an estimate', () => {
   const meter = feed({}, { startedAt: 1_000, read: 0, write: 82_000, model: 'claude-sonnet' }, { startedAt: 2_000, read: 82_000, write: 500, model: 'claude-sonnet' })
-  const lines = paneRows(meter, [{ kind: 'seven_day', percentUsed: 41 }], 2, 0, 24).map(r => texts(r).join(' '))
-  expect(lines[0]).toBe('Session 3 requests · 66% cached · 30 output · $2.00')
+  const lines = paneRows(meter, [{ kind: 'seven_day', percentUsed: 41 }], 0, 24).map(r => texts(r).join(' '))
+  expect(lines[0]).toBe('Session 3 requests · 66% cached · 30 output')
   expect(lines).toContain('Cache misses 1 · ~81k tokens rewritten (estimate)')
   expect(lines).toContain('  req   2    ~81k model changed claude-opus → claude-sonnet')
   expect(lines).toContain(`  7d    ${bar(0.41, 20)}  41%`)
@@ -114,8 +115,8 @@ test('the pane lists each miss with what is known of it, marked as an estimate',
 
 test('the request table takes the rows the pane has left, three at least', () => {
   const meter = feed(...Array.from({ length: 30 }, (_, i) => ({ startedAt: i * 1_000 })))
-  const table = (maxRows: number) => paneRows(meter, PLAN, null, 0, maxRows).filter(r => /^\s+\d+$/.test(r[0]?.text ?? ''))
-  expect(paneRows(meter, PLAN, null, 0, 24).length).toBe(24)
+  const table = (maxRows: number) => paneRows(meter, PLAN, 0, maxRows).filter(r => /^\s+\d+$/.test(r[0]?.text ?? ''))
+  expect(paneRows(meter, PLAN, 0, 24).length).toBe(24)
   expect(table(24).length).toBe(12)
   expect(table(8).length).toBe(3)
 })

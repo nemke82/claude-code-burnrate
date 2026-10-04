@@ -75,12 +75,11 @@ test('requests, a miss and the plan windows reach the band', async ($, on) => {
       { kind: 'five_hour', percentUsed: 23.4 },
       { kind: 'seven_day', percentUsed: 41 },
     ],
-    cost: { usd: 1.5 },
-    changed: ['rateLimits', 'cost'],
+    changed: ['rateLimits'],
   })
   expect(await ui.find({ type: 'Text', text: /miss: likely prefix change, ~81k rewritten/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /5h 23%/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /\$1\.50/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /7d 41%/ })).toBeDefined()
   await ui.unmount()
 })
 
