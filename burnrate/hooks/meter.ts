@@ -10,15 +10,16 @@ import type { Meter, Miss, PlanWindow, Sample, Totals } from '../types'
 /** Samples kept for the per-request view; the totals count every request. */
 export const KEEP = 200
 
-// The shortest cache lifetime. A longer gap may have lapsed the entry; the mod
-// API does not say which lifetime the request asked for.
+// The shortest cache lifetime. After a longer pause the entry may have lapsed;
+// the mod API does not say which lifetime the request asked for, so a miss
+// past it is reported with the pause, not as an expiry.
 export const IDLE_MS = 300_000
 
 export const EMPTY_TOTALS: Totals = { requests: 0, read: 0, write: 0, fresh: 0, output: 0, misses: 0, wasted: 0 }
 
 export const EMPTY_METER: Meter = { samples: [], totals: EMPTY_TOTALS }
 
-export const promptTokens = (s: Sample) => s.read + s.write + s.fresh
+export const promptTokens = (s: Pick<Sample, 'read' | 'write' | 'fresh'>) => s.read + s.write + s.fresh
 
 /** Share of the prompt the cache served, 0 to 1; 0 for an empty prompt. */
 export function hitRatio(s: Pick<Sample, 'read' | 'write' | 'fresh'>): number {
@@ -26,26 +27,34 @@ export function hitRatio(s: Pick<Sample, 'read' | 'write' | 'fresh'>): number {
   return total === 0 ? 0 : s.read / total
 }
 
+// A request that leaves this share of the cached prefix unread, and writes it
+// again, is a miss; less is the ordinary churn at the prompt's tail.
+export const MISS_SHARE = 0.2
+
 /**
  * The miss `cur` was, given the request before it; undefined when it was not
- * one. A prompt that shrank is a /compact, not a miss, and a request after an
- * uncached one had nothing to read.
+ * one. Judged on counts alone: what `prev` left cached that `cur` did not read
+ * and wrote instead. A prompt that shrank (a /compact, a rewind) is left out:
+ * its rewrite cannot be told from a lost cache. A request after an uncached
+ * one had nothing to read.
  */
-export function detectMiss(prev: Sample | undefined, cur: Sample): Miss | undefined {
-  if (!prev || prev.read + prev.write === 0) return undefined
-  const before = promptTokens(prev)
-  if (promptTokens(cur) < before * 0.7) return undefined
-  if (cur.write === 0 || cur.read >= before * 0.5) return undefined
-  const gapMs = cur.startedAt - prev.startedAt
-  const cause = cur.model !== prev.model ? 'model' : gapMs > IDLE_MS ? 'idle' : 'prefix'
-  return { cause, wasted: Math.min(cur.write, before), gapMs }
+export function detectMiss(prev: Sample | undefined, cur: Omit<Sample, 'n' | 'miss'>): Miss | undefined {
+  if (!prev) return undefined
+  const cached = prev.read + prev.write
+  if (cached === 0 || promptTokens(cur) < promptTokens(prev) * 0.7) return undefined
+  const wasted = Math.min(cur.write, cached - cur.read)
+  if (wasted < cached * MISS_SHARE) return undefined
+  const gapMs = Math.max(0, cur.startedAt - prev.endedAt)
+  if (cur.model !== prev.model) return { cause: 'model', wasted, gapMs, from: prev.model }
+  return { cause: gapMs > IDLE_MS ? 'idle' : 'prefix', wasted, gapMs }
 }
 
 /** The meter with one more request: its miss worked out, the totals moved on. */
-export function record(meter: Meter, raw: Omit<Sample, 'miss'>): Meter {
+export function record(meter: Meter, raw: Omit<Sample, 'n' | 'miss'>): Meter {
   const miss = detectMiss(meter.samples[meter.samples.length - 1], raw)
-  const sample: Sample = miss ? { ...raw, miss } : raw
   const t = meter.totals
+  const n = t.requests + 1
+  const sample: Sample = miss ? { ...raw, n, miss } : { ...raw, n }
   return {
     samples: [...meter.samples, sample].slice(-KEEP),
     totals: {
@@ -70,16 +79,3 @@ export function fmtTokens(n: number): string {
 const WINDOW_LABEL: Record<string, string> = { five_hour: '5h', seven_day: '7d', spend_limit: 'spend' }
 
 export const windowLabel = (w: PlanWindow) => WINDOW_LABEL[w.kind] ?? w.kind
-
-/** The band's one line, until the UI step gives it a layout of its own. */
-export function bandLine(meter: Meter, windows: readonly PlanWindow[]): string {
-  const last = meter.samples[meter.samples.length - 1]
-  if (!last) return 'waiting for the first request'
-  const { misses, wasted } = meter.totals
-  const parts = [
-    `${Math.round(hitRatio(last) * 100)}% cached`,
-    misses === 0 ? 'no misses' : `${misses} ${misses === 1 ? 'miss' : 'misses'}, ${fmtTokens(wasted)} rewritten`,
-    ...windows.map(w => `${windowLabel(w)} ${Math.round(w.percentUsed)}%`),
-  ]
-  return parts.join(' · ')
-}

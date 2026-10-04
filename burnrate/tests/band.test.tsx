@@ -65,7 +65,7 @@ test('requests, a miss and the plan windows reach the band', async ($, on) => {
 
   await step($, 0)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /98% cached · no misses/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /98% cached/ })).toBeDefined()
 
   await clock.advance(10_000)
   await step($, 1)
@@ -78,7 +78,9 @@ test('requests, a miss and the plan windows reach the band', async ($, on) => {
     cost: { usd: 1.5 },
     changed: ['rateLimits', 'cost'],
   })
-  expect(await ui.find({ type: 'Text', text: /0% cached · 1 miss, 81\.3k rewritten · 5h 23% · 7d 41%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /miss: likely prefix change, ~81k rewritten/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /5h 23%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\$1\.50/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -103,4 +105,63 @@ test('/clear starts the meter over', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /waiting for the first request/ })).toBeDefined()
   await ui.unmount()
+})
+
+const PANE = {
+  plugin: 'burnrate',
+  component: 'Pane',
+  requestId: 'burnrate',
+  props: {
+    title: 'burnrate',
+    isFocused: false,
+    bodyColumns: 80,
+    placement: 'inline',
+    scroll: { offset: 0, bodyRows: 24 },
+    view: {},
+  },
+} as const
+
+test('the /burn pane lists the miss, the windows and the requests on every surface', async ($, on) => {
+  const clock = mock.clock(on, { now: Date.parse('2026-10-04T10:00:00Z') })
+  answerSteps(on, [usage(80_000, 1_000, 300), usage(0, 82_000, 300)])
+  on('session.measure', async ($, e) => ({ changed: [...e.changed] }))
+
+  await step($, 0)
+  await clock.advance(10_000)
+  await step($, 1)
+  await $.session.measure({
+    context: { window: 200_000 },
+    rateLimits: [{ kind: 'five_hour', percentUsed: 92, resetsAt: '2026-10-04T12:10:10Z' }],
+    changed: ['rateLimits'],
+  })
+
+  // a surface other than the terminal draws no-break spaces: \s matches both
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await ui.find({ type: 'Text', text: /2\srequests\s·\s49%\scached/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /1\s·\s~81k\stokens\srewritten\s\(estimate\)/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /resets\sin\s2h\s10m/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /sent\suncached/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('/burn opens the pane and /burn close shuts it', async ($, on) => {
+  const opened: string[] = []
+  const closed: string[] = []
+  on('ui.open', async ($, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true as const } }
+  })
+  on('ui.close', async ($, e) => {
+    closed.push(e.id)
+    return { value: undefined }
+  })
+  const run = (args: string) =>
+    $.command.run({ command: 'burn', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+
+  expect((await run(''))?.text).toMatch(/opened/)
+  expect((await run(' Close '))?.text).toMatch(/closed/)
+  expect(opened).toEqual(['burnrate'])
+  expect(closed).toEqual(['burnrate'])
 })

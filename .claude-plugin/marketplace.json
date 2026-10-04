@@ -9,7 +9,7 @@
     {
       "name": "burnrate",
       "source": "./burnrate",
-      "description": "Live cost meter for Claude Code: what each prompt-cache miss cost you and how fast you're burning your plan window."
+      "description": "Live cost meter for Claude Code: your session's cost, your prompt-cache misses with an estimate of the tokens each rewrote, and how fast you're burning your plan window."
     }
   ]
 }
