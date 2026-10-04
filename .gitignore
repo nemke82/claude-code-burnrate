@@ -1,0 +1,4 @@
+# laid by the engine each time it loads the mod
+burnrate/.claude-plugin/types/
+burnrate/tsconfig.json
+node_modules/

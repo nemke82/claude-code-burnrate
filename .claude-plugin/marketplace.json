@@ -1,0 +1,15 @@
+{
+  "name": "burnrate",
+  "description": "burnrate: a live cost meter mod for Claude Code.",
+  "owner": {
+    "name": "nemke82",
+    "url": "https://github.com/nemke82"
+  },
+  "plugins": [
+    {
+      "name": "burnrate",
+      "source": "./burnrate",
+      "description": "Live cost meter for Claude Code: what each prompt-cache miss cost you and how fast you're burning your plan window."
+    }
+  ]
+}
