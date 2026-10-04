@@ -9,7 +9,7 @@
     {
       "name": "burnrate",
       "source": "./burnrate",
-      "description": "Live quota and prompt-cache monitor for Claude Code: your plan windows, your prompt-cache misses and an estimate of the tokens each one rewrote."
+      "description": "Live quota and prompt-cache monitor for Claude Code: how fast your plan windows are filling and when they run out, plus your prompt-cache misses and an estimate of the tokens each one rewrote."
     }
   ]
 }

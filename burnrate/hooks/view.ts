@@ -2,8 +2,10 @@
  * view.ts — what the band and the /burn pane say, as plain data: rows of
  * coloured text segments. Pure, so a test reads it without a surface.
  */
-import type { Meter, Miss, PlanWindow, Sample } from '../types'
+import type { Meter, Miss, PlanWindow, Reading, Sample } from '../types'
 import { fmtTokens, hitRatio, windowLabel } from './meter'
+import { fmtPace, paceOf } from './pace'
+import type { Pace } from './pace'
 
 export type Seg = { text: string; color?: string; bold?: boolean; dim?: boolean }
 
@@ -69,27 +71,63 @@ export function fit(ranked: readonly (readonly [Seg, number])[], columns: number
   return kept.map(([seg]) => seg)
 }
 
+type Paced = { w: PlanWindow; pace: Pace | undefined }
+
+/** The windows with their paces, the one that fills before it resets first (soonest of several), then by share used. */
+export function byUrgency(windows: readonly PlanWindow[], readings: readonly Reading[], now: number): Paced[] {
+  const paced = windows.map(w => ({ w, pace: paceOf(readings, w, now) }))
+  const due = (p: Paced) => (p.pace?.hitsLimit ? (p.pace.fullInMs ?? 0) : Infinity)
+  return paced.sort((a, b) => due(a) - due(b) || b.w.percentUsed - a.w.percentUsed)
+}
+
+/** `full in 1h 16m`, red inside half an hour; nothing for a window that resets first. */
+function limitSeg(p: Paced): Seg | undefined {
+  if (p.w.percentUsed >= 100) return { text: 'limit reached', color: 'red', bold: true }
+  if (!p.pace?.hitsLimit || p.pace.fullInMs === undefined) return undefined
+  return { text: `full in ${fmtGap(p.pace.fullInMs)}`, color: p.pace.fullInMs < 30 * 60_000 ? 'red' : 'yellow', bold: true }
+}
+
+const isRising = (p: Paced) => p.pace !== undefined && p.pace.perHour >= 0.05
+
 /**
- * The band: one row, the tightest plan window first. In the order a narrow
- * terminal drops them: the session's miss count, the looser plan windows, the
- * last miss's detail (its red mark stays), then the cached share.
+ * The band: one row, the most urgent plan window first with its pace. In the
+ * order a narrow terminal drops them: the session's miss count, the other
+ * windows, the last miss's detail (its red mark stays) and the pace, the
+ * cached share, then the warning that a window fills before it resets.
  */
-export function bandSegs(meter: Meter, windows: readonly PlanWindow[], columns: number): Seg[] {
+export function bandSegs(meter: Meter, windows: readonly PlanWindow[], readings: readonly Reading[], now: number, columns: number): Seg[] {
   const name: Seg = { text: 'burnrate', color: 'cyan', bold: true }
   const last = meter.samples[meter.samples.length - 1]
-  const [tightest, ...looser] = [...windows].sort((a, b) => b.percentUsed - a.percentUsed)
-  const lead: [Seg, number][] = tightest ? [[windowSeg(tightest), 1]] : []
-  const rest = looser.map((w): [Seg, number] => [windowSeg(w), 4])
-  if (!last) return fit([[name, 0], ...lead, ...rest, [{ text: 'waiting for the first request', dim: true }, 2]], columns)
+  const [lead, ...others] = byUrgency(windows, readings, now)
+  const plan: [Seg, number][] = []
+  if (lead) {
+    plan.push([windowSeg(lead.w), 1])
+    if (isRising(lead)) plan.push([{ text: fmtPace(lead.pace?.perHour ?? 0, lead.w.kind), dim: true }, 3])
+    const limit = limitSeg(lead)
+    if (limit) plan.push([limit, 1])
+  }
+  for (const p of others) plan.push([windowSeg(p.w), 4])
+  if (!last) return fit([[name, 0], ...plan, [{ text: 'waiting for the first request', dim: true }, 2]], columns)
 
   const state = health(last)
-  const ranked: [Seg, number][] = [[{ text: MARK[state], color: COLOR[state], bold: true }, 0], [name, 0], ...lead, ...rest]
+  const ranked: [Seg, number][] = [[{ text: MARK[state], color: COLOR[state], bold: true }, 0], [name, 0], ...plan]
   ranked.push([{ text: `${Math.round(hitRatio(last) * 100)}% cached`, color: COLOR[state] }, 2])
 
   const { misses, wasted } = meter.totals
   if (last.miss) ranked.push([{ text: `miss: ${missText(last.miss)}, ${fmtWaste(last.miss.wasted)} rewritten`, color: 'red' }, 3])
   if (misses > (last.miss ? 1 : 0)) ranked.push([{ text: `${plural(misses, 'miss')} ${fmtWaste(wasted)}`, dim: true }, 5])
   return fit(ranked, columns)
+}
+
+/** What the pane says of a window's pace: the rate, then where it leads. */
+function paceSegs(p: Paced): Seg[] {
+  if (!p.pace) return [{ text: 'pace: measuring', dim: true }]
+  if (!isRising(p)) return [{ text: 'steady', dim: true }]
+  const segs: Seg[] = [{ text: fmtPace(p.pace.perHour, p.w.kind) }]
+  const limit = limitSeg(p)
+  if (limit) segs.push(limit)
+  else if (p.pace.atReset !== undefined) segs.push({ text: `~${Math.round(p.pace.atReset)}% at reset`, dim: true })
+  return segs
 }
 
 const pad = (text: string, width: number) => text.padStart(width)
@@ -101,7 +139,7 @@ export function resetText(w: PlanWindow, now: number): string {
 }
 
 /** The /burn pane, row by row; an empty row is a blank line. The request table takes what `maxRows` leaves, three rows at least. */
-export function paneRows(meter: Meter, windows: readonly PlanWindow[], now: number, maxRows: number): Seg[][] {
+export function paneRows(meter: Meter, windows: readonly PlanWindow[], readings: readonly Reading[], now: number, maxRows: number): Seg[][] {
   const t = meter.totals
   const prompt = t.read + t.write + t.fresh
   const rows: Seg[][] = []
@@ -130,7 +168,8 @@ export function paneRows(meter: Meter, windows: readonly PlanWindow[], now: numb
   rows.push([])
 
   rows.push([{ text: 'Plan windows', bold: true, color: 'cyan' }, ...(windows.length === 0 ? [{ text: 'none reported (API key, or no response yet)', dim: true }] : [])])
-  for (const w of windows) {
+  for (const p of byUrgency(windows, readings, now)) {
+    const w = p.w
     const color = windowColor(w.percentUsed)
     const reset = resetText(w, now)
     rows.push([
@@ -138,6 +177,7 @@ export function paneRows(meter: Meter, windows: readonly PlanWindow[], now: numb
       { text: bar(w.percentUsed / 100, 20), color: color ?? 'green' },
       { text: pad(`${Math.round(w.percentUsed)}%`, 4), bold: true, color },
       ...(reset ? [{ text: reset, dim: true }] : []),
+      ...paceSegs(p),
     ])
   }
   rows.push([])

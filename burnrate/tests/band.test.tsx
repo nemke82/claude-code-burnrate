@@ -38,7 +38,8 @@ async function step($: Engine, index: number, agentId?: string) {
   await stream.result
 }
 
-test('the band draws on the terminal and the desktop', async $ => {
+test('the band draws on the terminal and the desktop', async ($, on) => {
+  mock.clock(on)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
     expect(await ui.find({ type: 'Text', text: /waiting for the first request/ })).toBeDefined()

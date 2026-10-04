@@ -60,8 +60,16 @@ export type PlanWindow = {
   resetsAt?: string
 }
 
+/** What a plan window stood at, when: the points a pace is worked out from. */
+export type Reading = {
+  kind: string
+  /** `$.clock.now()` when it was read */
+  at: number
+  percentUsed: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    burnrate: { meter: Meter; windows: PlanWindow[] }
+    burnrate: { meter: Meter; windows: PlanWindow[]; readings: Reading[] }
   }
 }

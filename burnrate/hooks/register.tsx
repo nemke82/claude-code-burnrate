@@ -7,25 +7,39 @@
  * figure is list price, which is not what a subscription or a custom
  * contract pays.
  *
- *   - a row above the prompt: the tightest plan window, the last request and
- *     the misses (estimates, see detectMiss)
+ *   - a row above the prompt: the plan window that matters most with its pace
+ *     (see pace.ts), the last request and the misses (estimates, see detectMiss)
  *   - `/burn`: a pane with the session's totals, each miss and the last requests
  */
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import { EMPTY_METER, record } from './meter'
+import { addReadings } from './pace'
 import { bandSegs, paneRows } from './view'
-import type { Meter, PlanWindow } from '../types'
+import type { Meter, PlanWindow, Reading } from '../types'
 
 const PANE = 'burnrate'
 const COMMAND = 'burn'
 
 const meter = atom({ plugin: 'burnrate', key: 'meter' } as const, EMPTY_METER as Meter)
 const windows = atom({ plugin: 'burnrate', key: 'windows' } as const, [] as PlanWindow[])
+const readings = atom({ plugin: 'burnrate', key: 'readings' } as const, [] as Reading[])
+
+// the windows as they stand, and one more point of each one's history
+async function measure($: EngineInterface, limits: readonly PlanWindow[]) {
+  const now = limits.map(w => ({ ...w }))
+  const at = await $.clock.now()
+  await update($, windows, () => now)
+  await update($, readings, history => addReadings(history, now, at))
+}
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // the engine pushes the windows only as they move: start from where they stand
+    const usage = await $.session.usage().catch(() => undefined)
+    if (usage && usage.rateLimits.length > 0) await measure($, usage.rateLimits)
+
     await $.command.register({
       name: COMMAND,
       description: 'Cache misses, plan windows and the last requests of this session (close shuts the pane)',
@@ -72,8 +86,7 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    const now = e.rateLimits.map(w => ({ ...w }))
-    await update($, windows, () => now)
+    await measure($, e.rateLimits)
     return next(e)
   })
 
@@ -85,7 +98,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const segs = bandSegs(await read($, meter), await read($, windows), e.props.bodyColumns)
+    const segs = bandSegs(await read($, meter), await read($, windows), await read($, readings), await $.clock.now(), e.props.bodyColumns)
     const { Box, Text } = $.ui.resolve(e)
 
     return (
@@ -101,7 +114,7 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     // HTML collapses runs of spaces; a no-break space keeps the columns
     const sp = (t: string) => (e.surface === 'terminal' ? t : t.replace(/ /g, ' '))
-    const rows = paneRows(await read($, meter), await read($, windows), await $.clock.now(), e.props.scroll.bodyRows)
+    const rows = paneRows(await read($, meter), await read($, windows), await read($, readings), await $.clock.now(), e.props.scroll.bodyRows)
 
     return (
       <Box flexDirection="column">

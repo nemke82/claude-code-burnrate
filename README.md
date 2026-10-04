@@ -1,18 +1,35 @@
 # burnrate
 
-Live quota and prompt-cache monitor for Claude Code: your plan windows, your prompt-cache misses and an estimate of the tokens each one rewrote.
+Live quota and prompt-cache monitor for Claude Code: how fast your plan windows are filling and when they run out, plus your prompt-cache misses and an estimate of the tokens each one rewrote.
+
+![burnrate's row above the prompt, through a scripted session](assets/demo-band.gif)
 
 > **Status: early.** The meter works and is tested, but it has not been tuned against many real sessions yet.
 
 ```
-● burnrate 7d 41% 5h 23% 98% cached
-✖ burnrate 7d 41% 5h 24% 0% cached miss: model changed, ~81k rewritten
+● burnrate 5h 23% +4%/h 7d 41% 98% cached
+● burnrate 5h 62% +30%/h full in 1h 16m 7d 41% 98% cached
+✖ burnrate 5h 24% +4%/h 7d 41% 0% cached miss: model changed, ~81k rewritten
 ```
 
 ## What it shows
 
-- **The row above the prompt:** your plan windows, tightest first, then how much of the last request the cache served, and a miss when there was one. A window turns yellow at 70% and red at 90%. On a narrow terminal the detail goes and the tightest window stays.
-- **`/burn`:** a pane with the session's totals, each miss with what is known about it, the plan windows with their reset times, and the last requests one by one. `/burn close` shuts it.
+- **The row above the prompt:** your plan windows with the pace of the most urgent one, a warning when it will fill before it resets, how much of the last request the cache served, and a miss when there was one. A window turns yellow at 70% and red at 90%. On a narrow terminal the detail goes and the window and its warning stay.
+- **`/burn`:** a pane with the session's totals, each miss with what is known about it, the plan windows with their reset times, pace and where that pace leads, and the last requests one by one. `/burn close` shuts it.
+
+![The /burn pane opening and updating](assets/demo-pane.gif)
+
+Both animations are generated from the mod's own rendering code with a scripted session (`demo/make-demo.ts`, `demo/render-gif.py`).
+
+## Pace
+
+The pace is how fast a plan window is filling: points per hour for the five-hour window, per day for the seven-day one. It is measured from the window's own readings, over the last half hour for the five-hour window and up to six hours for the others, and it falls back to "steady" by itself when you stop sending.
+
+- **`full in 1h 16m`** appears only when the window would fill before it resets at the current pace. It turns red inside half an hour. A rise of a single point is not enough to raise it.
+- **`~74% at reset`** is where the window ends up if the reset comes first.
+- **`pace: measuring`** shows until burnrate has enough history: five minutes for the five-hour window, an hour for the others.
+
+It is a projection of the recent past, not a forecast: one heavy turn moves it, and it knows nothing about what you will do next. The windows are your account's, so other sessions and devices move them too.
 
 ## What a miss is, and what it is not
 
